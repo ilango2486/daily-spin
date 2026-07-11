@@ -57,15 +57,16 @@
   h3.sec{font-size:clamp(15px,2vw,18px);margin:18px 0 8px;color:var(--muted);
     text-transform:uppercase;letter-spacing:1.5px;font-weight:800;}
 
-  .must-list{display:flex;flex-direction:column;gap:8px;}
+  .must-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  @media(max-width:540px){.must-list{grid-template-columns:1fr;}}
   .must-item{
-    display:flex;align-items:center;gap:14px;background:#F5F9FC;border:2px solid var(--line);
-    border-radius:16px;padding:12px 14px;font-size:clamp(17px,2.4vw,22px);font-weight:700;
-    cursor:pointer;min-height:60px;
+    display:flex;align-items:center;gap:10px;background:#F5F9FC;border:2px solid var(--line);
+    border-radius:16px;padding:8px 12px;font-size:clamp(15px,2vw,19px);font-weight:700;
+    cursor:pointer;min-height:52px;
   }
   .must-item .box{
-    width:34px;height:34px;border-radius:11px;border:3px solid var(--kc);flex:0 0 34px;
-    display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;background:#fff;
+    width:30px;height:30px;border-radius:10px;border:3px solid var(--kc);flex:0 0 30px;
+    display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;background:#fff;
   }
   .must-item.done{background:#EAF9F0;border-color:#CDEFDB;}
   .must-item.done .box{background:var(--ok);border-color:var(--ok);}
@@ -419,6 +420,13 @@ function spin(k, canvas, tasks, btn){
 }
 
 /* ---------- stars ---------- */
+function resetDay(k){
+  if(k.today.starAwarded){
+    k.stars = Math.max(0, k.stars-1);
+    k.lifetime = Math.max(0, (k.lifetime||0)-1);
+  }
+  k.today = freshToday();
+}
 function checkComplete(k){
   if(k.today.starAwarded) return;
   var allMust = k.must.every(function(m){ return k.today.mustDone.indexOf(m.id)!==-1; });
@@ -472,7 +480,7 @@ function renderPanel(){
       + '<div class="row"><label>Stars now</label><b>'+k.stars+'</b> <button class="plain" data-act="star-">−1</button>'
       + '<button class="plain" data-act="star+">+1</button> <button class="danger" data-act="star0">Reset to 0</button></div>'
       + '<div class="row"><label>All-time 🏆</label><b>'+(k.lifetime||0)+'</b> <button class="plain" data-act="life-">−1</button>'
-      + '<button class="plain" data-act="life+">+1</button></div>'
+      + '<button class="plain" data-act="life+">+1</button> <button class="danger" data-act="resetday">↺ Reset today</button></div>'
       + '<h4 style="margin:12px 0 4px">Every-day tasks</h4><div class="tlist">'
       + k.must.map(function(m){return '<div class="titem"><span class="grow">'+esc(m.text)+'</span><button data-del-must="'+m.id+'">✕</button></div>';}).join("")
       + '</div><div class="addrow"><input type="text" placeholder="New daily task…" data-add-must-in="1"><button data-add-must="1">Add</button></div>'
@@ -487,6 +495,7 @@ function renderPanel(){
     + '<label class="switch"><input type="checkbox" id="linkRule" '+(state.linkRule?'checked':'')+'> Star needs every-day tasks AND the wheel mission</label>'
     + '<div class="row"><button class="plain" id="showBackup">Show backup code</button>'
     + '<button class="plain" id="doRestore">Restore from code</button>'
+    + '<button class="plain" id="resetAllDays">↺ Reset today (both kids)</button>'
     + '<button class="danger" id="factory">Reset everything to defaults</button></div>'
     + '<textarea id="backupOut" placeholder="Backup code appears here — copy it somewhere safe. To restore: paste a code here, then tap Restore."></textarea>'
     + '</div>'
@@ -514,6 +523,7 @@ function renderPanel(){
         if(a==="star0" && confirm("Reset "+k.name+"'s stars to 0?")) k.stars=0;
         if(a==="life+") k.lifetime=(k.lifetime||0)+1;
         if(a==="life-") k.lifetime=Math.max(0,(k.lifetime||0)-1);
+        if(a==="resetday" && confirm("Reset "+k.name+"'s day? Clears today's checkmarks and spin"+(k.today.starAwarded?", and takes back today's star":"")+".")) resetDay(k);
         saveState(); render(); renderPanel();
       });
     });
@@ -564,6 +574,11 @@ function renderPanel(){
       ensureDailyReset(); saveState(); render(); renderPanel();
       alert("Restored! ✓");
     }catch(e){ alert("That code didn't work — check it was copied completely."); }
+  });
+  document.getElementById("resetAllDays").addEventListener("click", function(){
+    if(confirm("Reset today for everyone? Clears all checkmarks and spins (stars earned today are taken back).")){
+      state.kids.forEach(resetDay); saveState(); render(); renderPanel();
+    }
   });
   document.getElementById("factory").addEventListener("click", function(){
     if(confirm("Erase ALL names, tasks and stars, and go back to defaults?")){
