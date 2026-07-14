@@ -133,6 +133,11 @@
   .panel{background:#fff;border-radius:20px;max-width:760px;width:100%;padding:20px;user-select:text;}
   .panel h2{margin:0 0 4px;font-size:24px;}
   .panel .sub{color:var(--muted);font-size:13px;margin-bottom:14px;font-weight:600;}
+  .close-x{
+    border:none;background:#EEF3F8;color:var(--ink);width:46px;height:46px;border-radius:14px;
+    font-size:20px;font-weight:800;cursor:pointer;flex:0 0 46px;
+  }
+  .close-x:active{transform:scale(.93);}
   .pkid{border:2px solid var(--line);border-radius:16px;padding:14px;margin-bottom:16px;}
   .pkid h3{margin:0 0 10px;font-size:19px;}
   .row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}
@@ -493,7 +498,10 @@ function openSettings(){
   overlay.classList.add("open");
 }
 function renderPanel(){
-  var h = '<h2>⚙️ Parent settings</h2><div class="sub">Changes save automatically on this screen.</div>';
+  var h = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+    + '<h2 style="margin:0">⚙️ Parent settings</h2>'
+    + '<button class="close-x" id="closeTop">✕</button></div>'
+    + '<div class="sub">Changes save automatically on this screen.</div>';
   state.kids.forEach(function(k, idx){
     h += '<div class="pkid" data-kid="'+k.id+'">'
       + '<h3>'+esc(k.name)+'</h3>'
@@ -630,6 +638,9 @@ function renderPanel(){
     if(confirm("Erase ALL names, tasks and stars, and go back to defaults?")){
       state = defaultState(); saveState(); render(); renderPanel();
     }
+  });
+  document.getElementById("closeTop").addEventListener("click", function(){
+    overlay.classList.remove("open");
   });
   document.getElementById("closePanel").addEventListener("click", function(){
     overlay.classList.remove("open");
