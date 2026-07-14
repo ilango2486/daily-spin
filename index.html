@@ -101,6 +101,12 @@
   .done-btn:active{transform:translateY(3px);box-shadow:0 2px 0 rgba(0,0,0,.12);}
   .done-chip{font-size:clamp(17px,2.4vw,21px);font-weight:800;color:var(--ok);}
 
+  .dayoff{
+    margin-top:18px;text-align:center;background:linear-gradient(135deg,#E4F6FF,#FFF6DE);
+    border-radius:18px;padding:26px 16px;font-size:clamp(20px,3vw,28px);font-weight:800;
+  }
+  .dayoff span{display:inline-block;margin-top:6px;font-size:clamp(14px,2vw,17px);color:var(--muted);font-weight:600;}
+
   .day-banner{
     margin-top:14px;text-align:center;background:#EAF9F0;border-radius:16px;padding:12px;
     font-size:clamp(18px,2.6vw,24px);font-weight:800;color:#1d7d4c;
@@ -237,8 +243,19 @@ function ensureDailyReset(){
 /* ---------- init ---------- */
 var state = loadState() || defaultState();
 // migrate safety
-state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; });
+state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; });
 ensureDailyReset();
+
+/* ---------- day off helpers ---------- */
+function isOff(k){ return !!(k.offUntil && todayStr() <= k.offUntil); }
+function offUntilDate(days){ // days=1 means just today
+  var d = new Date(); d.setDate(d.getDate() + (days-1));
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function niceDate(iso){
+  var p = iso.split("-");
+  return new Date(+p[0], p[1]-1, +p[2]).toLocaleDateString(undefined,{weekday:"short", month:"short", day:"numeric"});
+}
 
 /* ---------- helpers ---------- */
 function getKid(id){ return state.kids.filter(function(k){return k.id===id;})[0]; }
@@ -279,8 +296,17 @@ function kidCard(k){
     +   '<div class="kid-name">'+esc(k.name)+'</div>'
     +   '<div class="jar">⭐ '+k.stars+' / '+k.goal+' <span class="bar"><i style="width:'+pct+'%"></i></span></div>'
     + '</div>'
-    + '<div class="reward-line">Reward: '+esc(k.reward)+' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time</div>'
-    + '<h3 class="sec">Every day</h3>'
+    + '<div class="reward-line">Reward: '+esc(k.reward)+' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time</div>';
+
+  if(isOff(k)){
+    html += '<div class="dayoff">🏖️ Day off'
+      + (k.offUntil === todayStr() ? ' today' : ' until '+niceDate(k.offUntil))
+      + '<br><span>No missions — see you back soon, '+esc(k.name)+'!</span></div>';
+    card.innerHTML = html;
+    return card;
+  }
+
+  html += '<h3 class="sec">Every day</h3>'
     + '<div class="must-list">';
   k.must.forEach(function(m){
     var done = k.today.mustDone.indexOf(m.id) !== -1;
@@ -481,6 +507,12 @@ function renderPanel(){
       + '<button class="plain" data-act="star+">+1</button> <button class="danger" data-act="star0">Reset to 0</button></div>'
       + '<div class="row"><label>All-time 🏆</label><b>'+(k.lifetime||0)+'</b> <button class="plain" data-act="life-">−1</button>'
       + '<button class="plain" data-act="life+">+1</button> <button class="danger" data-act="resetday">↺ Reset today</button></div>'
+      + '<div class="row"><label>🏖️ Day off</label>'
+      + (isOff(k)
+          ? '<b>until '+niceDate(k.offUntil)+'</b> <button class="danger" data-act="offend">End day off</button>'
+          : '<button class="plain" data-act="off1">Today</button> <button class="plain" data-act="off7">1 week</button> '
+            + '<input type="number" min="1" max="60" placeholder="days" data-off-days style="max-width:80px"> <button class="plain" data-act="offn">Set</button>')
+      + '</div>'
       + '<h4 style="margin:12px 0 4px">Every-day tasks</h4><div class="tlist">'
       + k.must.map(function(m){return '<div class="titem"><span class="grow">'+esc(m.text)+'</span><button data-del-must="'+m.id+'">✕</button></div>';}).join("")
       + '</div><div class="addrow"><input type="text" placeholder="New daily task…" data-add-must-in="1"><button data-add-must="1">Add</button></div>'
@@ -495,6 +527,7 @@ function renderPanel(){
     + '<label class="switch"><input type="checkbox" id="linkRule" '+(state.linkRule?'checked':'')+'> Star needs every-day tasks AND the wheel mission</label>'
     + '<div class="row"><button class="plain" id="showBackup">Show backup code</button>'
     + '<button class="plain" id="doRestore">Restore from code</button>'
+    + '<button class="plain" id="allOffToday">🏖️ Everyone off today</button>'
     + '<button class="plain" id="resetAllDays">↺ Reset today (both kids)</button>'
     + '<button class="danger" id="factory">Reset everything to defaults</button></div>'
     + '<textarea id="backupOut" placeholder="Backup code appears here — copy it somewhere safe. To restore: paste a code here, then tap Restore."></textarea>'
@@ -524,6 +557,15 @@ function renderPanel(){
         if(a==="life+") k.lifetime=(k.lifetime||0)+1;
         if(a==="life-") k.lifetime=Math.max(0,(k.lifetime||0)-1);
         if(a==="resetday" && confirm("Reset "+k.name+"'s day? Clears today's checkmarks and spin"+(k.today.starAwarded?", and takes back today's star":"")+".")) resetDay(k);
+        if(a==="off1") k.offUntil = offUntilDate(1);
+        if(a==="off7") k.offUntil = offUntilDate(7);
+        if(a==="offn"){
+          var di = sec.querySelector("[data-off-days]");
+          var n = parseInt(di && di.value, 10);
+          if(n>=1 && n<=60) k.offUntil = offUntilDate(n);
+          else { alert("Enter 1\u201360 days first."); return; }
+        }
+        if(a==="offend") k.offUntil = null;
         saveState(); render(); renderPanel();
       });
     });
@@ -574,6 +616,10 @@ function renderPanel(){
       ensureDailyReset(); saveState(); render(); renderPanel();
       alert("Restored! ✓");
     }catch(e){ alert("That code didn't work — check it was copied completely."); }
+  });
+  document.getElementById("allOffToday").addEventListener("click", function(){
+    state.kids.forEach(function(k){ k.offUntil = offUntilDate(1); });
+    saveState(); render(); renderPanel();
   });
   document.getElementById("resetAllDays").addEventListener("click", function(){
     if(confirm("Reset today for everyone? Clears all checkmarks and spins (stars earned today are taken back).")){
