@@ -53,6 +53,10 @@
   .jar .bar{width:110px;height:12px;background:#F3E3BC;border-radius:8px;overflow:hidden;}
   .jar .bar i{display:block;height:100%;background:var(--star);border-radius:8px;transition:width .5s;}
   .reward-line{font-size:clamp(12px,1.7vw,15px);color:var(--muted);font-weight:600;margin-top:4px;}
+  .bonus-line{
+    display:inline-block;margin-top:8px;background:linear-gradient(135deg,#F3E8FF,#FFE8F3);
+    border-radius:12px;padding:6px 14px;font-size:clamp(13px,1.9vw,16px);font-weight:800;color:#7C3AED;
+  }
 
   h3.sec{font-size:clamp(15px,2vw,18px);margin:18px 0 8px;color:var(--muted);
     text-transform:uppercase;letter-spacing:1.5px;font-weight:800;}
@@ -248,7 +252,7 @@ function ensureDailyReset(){
 /* ---------- init ---------- */
 var state = loadState() || defaultState();
 // migrate safety
-state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; });
+state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; if(typeof k.bonus!=="number") k.bonus=0; });
 ensureDailyReset();
 
 /* ---------- day off helpers ---------- */
@@ -301,7 +305,8 @@ function kidCard(k){
     +   '<div class="kid-name">'+esc(k.name)+'</div>'
     +   '<div class="jar">⭐ '+k.stars+' / '+k.goal+' <span class="bar"><i style="width:'+pct+'%"></i></span></div>'
     + '</div>'
-    + '<div class="reward-line">Reward: '+esc(k.reward)+' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time</div>';
+    + '<div class="reward-line">Reward: '+esc(k.reward)+' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time</div>'
+    + (k.bonus > 0 ? '<div class="bonus-line">✨ '+k.bonus+' bonus star'+(k.bonus===1?'':'s')+' — special awards!</div>' : '');
 
   if(isOff(k)){
     html += '<div class="dayoff">🏖️ Day off'
@@ -515,6 +520,8 @@ function renderPanel(){
       + '<button class="plain" data-act="star+">+1</button> <button class="danger" data-act="star0">Reset to 0</button></div>'
       + '<div class="row"><label>All-time 🏆</label><b>'+(k.lifetime||0)+'</b> <button class="plain" data-act="life-">−1</button>'
       + '<button class="plain" data-act="life+">+1</button> <button class="danger" data-act="resetday">↺ Reset today</button></div>'
+      + '<div class="row"><label>Bonus ✨</label><b>'+(k.bonus||0)+'</b> <button class="plain" data-act="bonus-">−1</button>'
+      + '<button class="plain" data-act="bonus+">+1</button></div>'
       + '<div class="row"><label>🏖️ Day off</label>'
       + (isOff(k)
           ? '<b>until '+niceDate(k.offUntil)+'</b> <button class="danger" data-act="offend">End day off</button>'
@@ -565,6 +572,8 @@ function renderPanel(){
         if(a==="life+") k.lifetime=(k.lifetime||0)+1;
         if(a==="life-") k.lifetime=Math.max(0,(k.lifetime||0)-1);
         if(a==="resetday" && confirm("Reset "+k.name+"'s day? Clears today's checkmarks and spin"+(k.today.starAwarded?", and takes back today's star":"")+".")) resetDay(k);
+        if(a==="bonus+") k.bonus=(k.bonus||0)+1;
+        if(a==="bonus-") k.bonus=Math.max(0,(k.bonus||0)-1);
         if(a==="off1") k.offUntil = offUntilDate(1);
         if(a==="off7") k.offUntil = offUntilDate(7);
         if(a==="offn"){
