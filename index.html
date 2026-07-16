@@ -45,6 +45,10 @@
     border-top:10px solid var(--kc,#2F7DE1);
   }
   .kid-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+  .kid-id{display:flex;align-items:center;gap:12px;}
+  .avatar{width:60px;height:60px;border-radius:50%;object-fit:cover;border:3px solid var(--kc);flex:0 0 60px;}
+  .avatar-fallback{display:flex;align-items:center;justify-content:center;background:var(--kc);color:#fff;
+    font-size:28px;font-weight:800;}
   .kid-name{font-size:clamp(24px,3.6vw,34px);font-weight:800;color:var(--kc);}
   .jar{
     display:flex;align-items:center;gap:10px;background:#FFF7E6;border-radius:16px;
@@ -252,7 +256,7 @@ function ensureDailyReset(){
 /* ---------- init ---------- */
 var state = loadState() || defaultState();
 // migrate safety
-state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; if(typeof k.bonus!=="number") k.bonus=0; });
+state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; if(typeof k.bonus!=="number") k.bonus=0; if(!("photo" in k)) k.photo=null; });
 ensureDailyReset();
 
 /* ---------- day off helpers ---------- */
@@ -300,9 +304,12 @@ function kidCard(k){
   card.style.setProperty("--kc", k.color);
 
   var pct = Math.min(100, Math.round(k.stars / Math.max(1,k.goal) * 100));
+  var avatar = k.photo
+    ? '<img class="avatar" src="'+k.photo+'" alt="">'
+    : '<span class="avatar avatar-fallback">'+esc((k.name||"?").charAt(0).toUpperCase())+'</span>';
   var html = ''
     + '<div class="kid-head">'
-    +   '<div class="kid-name">'+esc(k.name)+'</div>'
+    +   '<div class="kid-id">'+avatar+'<span class="kid-name">'+esc(k.name)+'</span></div>'
     +   '<div class="jar">⭐ '+k.stars+' / '+k.goal+' <span class="bar"><i style="width:'+pct+'%"></i></span></div>'
     + '</div>'
     + '<div class="reward-line">Reward: '+esc(k.reward)+' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time</div>'
@@ -520,6 +527,10 @@ function renderPanel(){
       + '<button class="plain" data-act="star+">+1</button> <button class="danger" data-act="star0">Reset to 0</button></div>'
       + '<div class="row"><label>All-time 🏆</label><b>'+(k.lifetime||0)+'</b> <button class="plain" data-act="life-">−1</button>'
       + '<button class="plain" data-act="life+">+1</button> <button class="danger" data-act="resetday">↺ Reset today</button></div>'
+      + '<div class="row"><label>Photo</label>'
+      + '<input type="file" accept="image/*" data-photo-in style="max-width:220px">'
+      + (k.photo ? ' <button class="danger" data-act="photodel">Remove photo</button>' : '')
+      + '</div>'
       + '<div class="row"><label>Bonus ✨</label><b>'+(k.bonus||0)+'</b> <button class="plain" data-act="bonus-">−1</button>'
       + '<button class="plain" data-act="bonus+">+1</button></div>'
       + '<div class="row"><label>🏖️ Day off</label>'
@@ -572,6 +583,7 @@ function renderPanel(){
         if(a==="life+") k.lifetime=(k.lifetime||0)+1;
         if(a==="life-") k.lifetime=Math.max(0,(k.lifetime||0)-1);
         if(a==="resetday" && confirm("Reset "+k.name+"'s day? Clears today's checkmarks and spin"+(k.today.starAwarded?", and takes back today's star":"")+".")) resetDay(k);
+        if(a==="photodel"){ k.photo=null; }
         if(a==="bonus+") k.bonus=(k.bonus||0)+1;
         if(a==="bonus-") k.bonus=Math.max(0,(k.bonus||0)-1);
         if(a==="off1") k.offUntil = offUntilDate(1);
@@ -603,6 +615,30 @@ function renderPanel(){
         var t = findTask(k, b.getAttribute("data-tog")); if(t){ t.active=!t.active; }
         saveState(); render(); renderPanel();
       });
+    });
+    var photoIn = sec.querySelector("[data-photo-in]");
+    if(photoIn) photoIn.addEventListener("change", function(){
+      var f = photoIn.files && photoIn.files[0];
+      if(!f) return;
+      var reader = new FileReader();
+      reader.onload = function(){
+        var img = new Image();
+        img.onload = function(){
+          var S = 160, c = document.createElement("canvas");
+          c.width = S; c.height = S;
+          var ctx = c.getContext("2d");
+          var side = Math.min(img.width, img.height);
+          var sx = (img.width - side)/2, sy = (img.height - side)/2;
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, S, S);
+          try{
+            k.photo = c.toDataURL("image/jpeg", 0.8);
+            saveState(); render(); renderPanel();
+          }catch(e){ alert("Couldn't process that photo — try a different one."); }
+        };
+        img.onerror = function(){ alert("Couldn't read that image file."); };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(f);
     });
     var addM = sec.querySelector("[data-add-must]");
     addM.addEventListener("click", function(){
