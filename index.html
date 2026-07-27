@@ -256,7 +256,7 @@ function ensureDailyReset(){
 /* ---------- init ---------- */
 var state = loadState() || defaultState();
 // migrate safety
-state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; if(typeof k.bonus!=="number") k.bonus=0; if(!("photo" in k)) k.photo=null; });
+state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; if(typeof k.bonus!=="number") k.bonus=0; if(!("photo" in k)) k.photo=null; if(typeof k.hidden!=="boolean") k.hidden=false; });
 ensureDailyReset();
 
 /* ---------- day off helpers ---------- */
@@ -295,7 +295,7 @@ function render(){
     new Date().toLocaleDateString(undefined,{weekday:"long", month:"long", day:"numeric"});
   var root = document.getElementById("kids");
   root.innerHTML = "";
-  state.kids.forEach(function(k){ root.appendChild(kidCard(k)); });
+  state.kids.forEach(function(k){ if(!k.hidden) root.appendChild(kidCard(k)); });
 }
 
 function kidCard(k){
@@ -527,6 +527,9 @@ function renderPanel(){
       + '<button class="plain" data-act="star+">+1</button> <button class="danger" data-act="star0">Reset to 0</button></div>'
       + '<div class="row"><label>All-time 🏆</label><b>'+(k.lifetime||0)+'</b> <button class="plain" data-act="life-">−1</button>'
       + '<button class="plain" data-act="life+">+1</button> <button class="danger" data-act="resetday">↺ Reset today</button></div>'
+      + '<div class="row"><label>👁️ On board</label>'
+      + '<button class="'+(k.hidden?'danger':'plain')+'" data-act="togglehide">'+(k.hidden?'Hidden — tap to show':'Visible — tap to hide')+'</button>'
+      + '</div>'
       + '<div class="row"><label>Photo</label>'
       + '<input type="file" accept="image/*" data-photo-in style="max-width:220px">'
       + (k.photo ? ' <button class="danger" data-act="photodel">Remove photo</button>' : '')
@@ -583,6 +586,7 @@ function renderPanel(){
         if(a==="life+") k.lifetime=(k.lifetime||0)+1;
         if(a==="life-") k.lifetime=Math.max(0,(k.lifetime||0)-1);
         if(a==="resetday" && confirm("Reset "+k.name+"'s day? Clears today's checkmarks and spin"+(k.today.starAwarded?", and takes back today's star":"")+".")) resetDay(k);
+        if(a==="togglehide") k.hidden = !k.hidden;
         if(a==="photodel"){ k.photo=null; }
         if(a==="bonus+") k.bonus=(k.bonus||0)+1;
         if(a==="bonus-") k.bonus=Math.max(0,(k.bonus||0)-1);
