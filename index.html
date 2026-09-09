@@ -80,6 +80,9 @@
   .must-item.done .box{background:var(--ok);border-color:var(--ok);}
   .must-item.done .txt{text-decoration:line-through;color:#6d9c81;}
 
+  .pts-chip{margin-left:auto;background:#FFF1D6;color:#8a5b00;border-radius:9px;padding:2px 8px;
+    font-size:13px;font-weight:800;flex:0 0 auto;}
+  .must-item.done .pts-chip{background:#D9F2E4;color:#1d7d4c;}
   .wheel-zone{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:6px;}
   .wheel-wrap{position:relative;width:min(320px,78vw);}
   .wheel-wrap canvas{width:100%;height:auto;display:block;}
@@ -169,6 +172,7 @@
   .switch{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;}
   .danger{background:#fde3e3;color:#b3261e;border:none;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer;}
   .plain{background:#e8eef7;color:#25324B;border:none;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer;}
+  .sel-mode{background:var(--ink);color:#fff;}
   .closebar{display:flex;justify-content:flex-end;margin-top:6px;}
   .closebar button{border:none;background:var(--ink);color:#fff;border-radius:12px;padding:12px 30px;font-size:16px;font-weight:800;cursor:pointer;}
   #backupOut{width:100%;height:80px;font-size:11px;}
@@ -203,15 +207,16 @@ function loadState(){
 
 /* ---------- defaults ---------- */
 function uid(){ return Math.random().toString(36).slice(2,9); }
-function task(t){ return {id:uid(), text:t, active:true}; }
-function must(t){ return {id:uid(), text:t}; }
-function freshToday(){ return {mustDone:[], spunTaskId:null, spunDone:false, starAwarded:false}; }
+function task(t,p){ return {id:uid(), text:t, active:true, pts:(typeof p==="number"?p:10)}; }
+function must(t,p){ return {id:uid(), text:t, pts:(typeof p==="number"?p:5)}; }
+function freshToday(){ return {mustDone:[], spunTaskId:null, spunDone:false, starAwarded:false, pointsEarned:0, starsEarned:0}; }
 
 function defaultState(){
   return {
     version:1,
     lastReset: todayStr(),
     linkRule: true,
+    scoring: "ticks",
     kids:[
       {
         id:uid(), name:"Vedanth", color:"#2F7DE1",
@@ -256,7 +261,22 @@ function ensureDailyReset(){
 /* ---------- init ---------- */
 var state = loadState() || defaultState();
 // migrate safety
-state.kids.forEach(function(k){ if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[]; if(typeof k.lifetime!=="number") k.lifetime=k.stars||0; if(!("offUntil" in k)) k.offUntil=null; if(typeof k.bonus!=="number") k.bonus=0; if(!("photo" in k)) k.photo=null; if(typeof k.hidden!=="boolean") k.hidden=false; });
+if(!state.scoring) state.scoring = "ticks";
+state.kids.forEach(function(k){
+  if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[];
+  if(typeof k.lifetime!=="number") k.lifetime=k.stars||0;
+  if(!("offUntil" in k)) k.offUntil=null;
+  if(typeof k.bonus!=="number") k.bonus=0;
+  if(!("photo" in k)) k.photo=null;
+  if(typeof k.hidden!=="boolean") k.hidden=false;
+  if(typeof k.points!=="number") k.points=0;
+  if(typeof k.lifetimePoints!=="number") k.lifetimePoints=0;
+  if(typeof k.pointTarget!=="number") k.pointTarget=50;
+  if(typeof k.today.pointsEarned!=="number") k.today.pointsEarned=0;
+  if(typeof k.today.starsEarned!=="number") k.today.starsEarned=0;
+  k.must.forEach(function(m){ if(typeof m.pts!=="number") m.pts=5; });
+  k.wheel.forEach(function(t){ if(typeof t.pts!=="number") t.pts=10; });
+});
 ensureDailyReset();
 
 /* ---------- day off helpers ---------- */
@@ -303,16 +323,27 @@ function kidCard(k){
   card.className = "kid-card";
   card.style.setProperty("--kc", k.color);
 
-  var pct = Math.min(100, Math.round(k.stars / Math.max(1,k.goal) * 100));
+  var pct, jarHtml;
+  if(state.scoring==="points"){
+    var tgt = Math.max(1,k.pointTarget||50);
+    pct = Math.min(100, Math.round(k.points / tgt * 100));
+    jarHtml = '<div class="jar">⭐ '+k.stars+' &nbsp;·&nbsp; Next ⭐: '+k.points+' / '+tgt+' <span class="bar"><i style="width:'+pct+'%"></i></span></div>';
+  }else{
+    pct = Math.min(100, Math.round(k.stars / Math.max(1,k.goal) * 100));
+    jarHtml = '<div class="jar">⭐ '+k.stars+' / '+k.goal+' <span class="bar"><i style="width:'+pct+'%"></i></span></div>';
+  }
   var avatar = k.photo
     ? '<img class="avatar" src="'+k.photo+'" alt="">'
     : '<span class="avatar avatar-fallback">'+esc((k.name||"?").charAt(0).toUpperCase())+'</span>';
   var html = ''
     + '<div class="kid-head">'
     +   '<div class="kid-id">'+avatar+'<span class="kid-name">'+esc(k.name)+'</span></div>'
-    +   '<div class="jar">⭐ '+k.stars+' / '+k.goal+' <span class="bar"><i style="width:'+pct+'%"></i></span></div>'
+    +   jarHtml
     + '</div>'
-    + '<div class="reward-line">Reward: '+esc(k.reward)+' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time</div>'
+    + '<div class="reward-line">Reward: '+esc(k.reward)
+    + (state.scoring==="points" ? ' at '+k.goal+' ⭐' : '')
+    + ' &nbsp;·&nbsp; 🏆 '+(k.lifetime||0)+' stars all-time'
+    + (state.scoring==="points" ? ' &nbsp;·&nbsp; ⚡ '+k.lifetimePoints+' pts all-time' : '')+'</div>'
     + '<div class="bonus-line">✨ Bonus stars: '+(k.bonus||0)+'</div>';
 
   if(isOff(k)){
@@ -328,7 +359,9 @@ function kidCard(k){
   k.must.forEach(function(m){
     var done = k.today.mustDone.indexOf(m.id) !== -1;
     html += '<div class="must-item'+(done?' done':'')+'" data-must="'+m.id+'">'
-          +   '<span class="box">'+(done?'✓':'')+'</span><span class="txt">'+esc(m.text)+'</span></div>';
+          +   '<span class="box">'+(done?'✓':'')+'</span><span class="txt">'+esc(m.text)+'</span>'
+          +   (state.scoring==="points" ? '<span class="pts-chip">+'+m.pts+'</span>' : '')
+          + '</div>';
   });
   html += '</div><h3 class="sec">Spin for today\u2019s mission</h3><div class="wheel-zone" data-zone="1"></div>';
   card.innerHTML = html;
@@ -338,7 +371,14 @@ function kidCard(k){
     el.addEventListener("click", function(){
       var id = el.getAttribute("data-must");
       var i = k.today.mustDone.indexOf(id);
-      if(i===-1) k.today.mustDone.push(id); else k.today.mustDone.splice(i,1);
+      var m2 = k.must.filter(function(m){return m.id===id;})[0];
+      if(i===-1){
+        k.today.mustDone.push(id);
+        if(state.scoring==="points" && m2) addPoints(k, m2.pts);
+      } else {
+        k.today.mustDone.splice(i,1);
+        if(state.scoring==="points" && m2) addPoints(k, -m2.pts);
+      }
       checkComplete(k); saveState(); render();
     });
   });
@@ -364,7 +404,8 @@ function kidCard(k){
   }else{
     var t = findTask(k, k.today.spunTaskId);
     var name = t ? t.text : "Mystery mission";
-    zone.innerHTML = '<div class="mission"><div class="lbl">Today\u2019s mission</div>'
+    zone.innerHTML = '<div class="mission"><div class="lbl">Today\u2019s mission'
+      + (state.scoring==="points" && t ? ' · worth '+t.pts+' pts ⚡' : '')+'</div>'
       + '<div class="task">'+esc(name)+'</div>'
       + (k.today.spunDone
           ? '<div class="done-chip">✓ Mission complete!</div>'
@@ -373,6 +414,7 @@ function kidCard(k){
     var db = zone.querySelector(".done-btn");
     if(db) db.addEventListener("click", function(){
       k.today.spunDone = true;
+      if(state.scoring==="points" && t) addPoints(k, t.pts);
       checkComplete(k); saveState(); render();
       confetti(k.color, 30);
     });
@@ -463,14 +505,35 @@ function spin(k, canvas, tasks, btn){
 }
 
 /* ---------- stars ---------- */
+function addPoints(k, delta){
+  k.points += delta;
+  k.lifetimePoints = Math.max(0, k.lifetimePoints + delta);
+  k.today.pointsEarned += delta;
+  var target = Math.max(1, k.pointTarget||50);
+  while(k.points >= target){
+    k.points -= target;
+    k.stars += 1; k.lifetime = (k.lifetime||0) + 1; k.today.starsEarned += 1;
+    confetti("#FFB020", 80);
+  }
+  while(k.points < 0){
+    if(k.stars > 0){
+      k.stars -= 1; k.lifetime = Math.max(0,(k.lifetime||0)-1);
+      k.today.starsEarned = Math.max(0, k.today.starsEarned-1);
+      k.points += target;
+    } else { k.points = 0; break; }
+  }
+}
 function resetDay(k){
-  if(k.today.starAwarded){
+  if(state.scoring === "points"){
+    addPoints(k, -k.today.pointsEarned);
+  } else if(k.today.starAwarded){
     k.stars = Math.max(0, k.stars-1);
     k.lifetime = Math.max(0, (k.lifetime||0)-1);
   }
   k.today = freshToday();
 }
 function checkComplete(k){
+  if(state.scoring === "points") return;
   if(k.today.starAwarded) return;
   var allMust = k.must.every(function(m){ return k.today.mustDone.indexOf(m.id)!==-1; });
   var wheelDone = !!k.today.spunDone;
@@ -523,6 +586,8 @@ function renderPanel(){
       + '</span></div>'
       + '<div class="row"><label>Star goal</label><input type="number" min="1" max="99" data-f="goal" value="'+k.goal+'">'
       + '<label style="min-width:60px">Reward</label><input type="text" data-f="reward" value="'+esc(k.reward)+'"></div>'
+      + '<div class="row"><label>⚡ Pts per ⭐</label><input type="number" min="1" max="9999" data-f="pointTarget" value="'+k.pointTarget+'">'
+      + '<span style="font-size:12px;color:var(--muted);font-weight:600">(points mode: earn this many points to bank a star)</span></div>'
       + '<div class="row"><label>Stars now</label><b>'+k.stars+'</b> <button class="plain" data-act="star-">−1</button>'
       + '<button class="plain" data-act="star+">+1</button> <button class="danger" data-act="star0">Reset to 0</button></div>'
       + '<div class="row"><label>All-time 🏆</label><b>'+(k.lifetime||0)+'</b> <button class="plain" data-act="life-">−1</button>'
@@ -543,17 +608,23 @@ function renderPanel(){
             + '<input type="number" min="1" max="60" placeholder="days" data-off-days style="max-width:80px"> <button class="plain" data-act="offn">Set</button>')
       + '</div>'
       + '<h4 style="margin:12px 0 4px">Every-day tasks</h4><div class="tlist">'
-      + k.must.map(function(m){return '<div class="titem"><span class="grow">'+esc(m.text)+'</span><button data-del-must="'+m.id+'">✕</button></div>';}).join("")
+      + k.must.map(function(m){return '<div class="titem"><span class="grow">'+esc(m.text)+'</span>'
+          + '<input type="number" min="1" max="999" value="'+m.pts+'" data-pts-must="'+m.id+'" style="width:64px" title="points">'
+          + '<button data-del-must="'+m.id+'">✕</button></div>';}).join("")
       + '</div><div class="addrow"><input type="text" placeholder="New daily task…" data-add-must-in="1"><button data-add-must="1">Add</button></div>'
       + '<h4 style="margin:14px 0 4px">Wheel tasks</h4><div class="tlist">'
       + k.wheel.map(function(t){return '<div class="titem'+(t.active?'':' paused')+'"><span class="grow">'+esc(t.text)+'</span>'
+          + '<input type="number" min="1" max="999" value="'+t.pts+'" data-pts-wheel="'+t.id+'" style="width:64px" title="points">'
           + '<button class="pause" data-tog="'+t.id+'">'+(t.active?'Pause':'Resume')+'</button>'
           + '<button data-del-wheel="'+t.id+'">✕</button></div>';}).join("")
       + '</div><div class="addrow"><input type="text" placeholder="New wheel task…" data-add-wheel-in="1"><button data-add-wheel="1">Add</button></div>'
       + '</div>';
   });
   h += '<div class="pkid gen"><h3>General</h3>'
-    + '<label class="switch"><input type="checkbox" id="linkRule" '+(state.linkRule?'checked':'')+'> Star needs every-day tasks AND the wheel mission</label>'
+    + '<div class="row"><label>Scoring</label>'
+    + '<button class="'+(state.scoring==="ticks"?'plain sel-mode':'plain')+'" id="modeTicks">✓ Ticks — star per day</button>'
+    + '<button class="'+(state.scoring==="points"?'plain sel-mode':'plain')+'" id="modePoints">⚡ Points — points become stars</button></div>'
+    + '<label class="switch"><input type="checkbox" id="linkRule" '+(state.linkRule?'checked':'')+'> Star needs every-day tasks AND the wheel mission (ticks mode)</label>'
     + '<div class="row"><button class="plain" id="showBackup">Show backup code</button>'
     + '<button class="plain" id="doRestore">Restore from code</button>'
     + '<button class="plain" id="allOffToday">🏖️ Everyone off today</button>'
@@ -570,6 +641,7 @@ function renderPanel(){
       inp.addEventListener("change", function(){
         var f = inp.getAttribute("data-f");
         if(f==="goal"){ k.goal = Math.max(1, parseInt(inp.value||"1",10)); }
+        else if(f==="pointTarget"){ k.pointTarget = Math.max(1, parseInt(inp.value||"50",10)); }
         else k[f] = inp.value.trim() || k[f];
         saveState(); render();
       });
@@ -600,6 +672,18 @@ function renderPanel(){
         }
         if(a==="offend") k.offUntil = null;
         saveState(); render(); renderPanel();
+      });
+    });
+    sec.querySelectorAll("[data-pts-must]").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        var m = k.must.filter(function(x){return x.id===inp.getAttribute("data-pts-must");})[0];
+        if(m){ m.pts = Math.max(1, parseInt(inp.value||"5",10)); saveState(); render(); }
+      });
+    });
+    sec.querySelectorAll("[data-pts-wheel]").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        var t = k.wheel.filter(function(x){return x.id===inp.getAttribute("data-pts-wheel");})[0];
+        if(t){ t.pts = Math.max(1, parseInt(inp.value||"10",10)); saveState(); render(); }
       });
     });
     sec.querySelectorAll("[data-del-must]").forEach(function(b){
@@ -656,6 +740,12 @@ function renderPanel(){
     });
   });
 
+  document.getElementById("modeTicks").addEventListener("click", function(){
+    state.scoring = "ticks"; saveState(); render(); renderPanel();
+  });
+  document.getElementById("modePoints").addEventListener("click", function(){
+    state.scoring = "points"; saveState(); render(); renderPanel();
+  });
   document.getElementById("linkRule").addEventListener("change", function(e){
     state.linkRule = e.target.checked; saveState();
   });
