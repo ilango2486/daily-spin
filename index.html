@@ -82,6 +82,8 @@
 
   .pts-chip{margin-left:auto;background:#FFF1D6;color:#8a5b00;border-radius:9px;padding:2px 8px;
     font-size:13px;font-weight:800;flex:0 0 auto;}
+  .pts-chip.boost{background:#FFD86B;color:#6b4400;}
+  .must-item.spotlight{border-color:#FFC53D;background:#FFFBEA;box-shadow:0 0 0 2px #FFE9A8;}
   .must-item.done .pts-chip{background:#D9F2E4;color:#1d7d4c;}
   .wheel-zone{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:6px;}
   .wheel-wrap{position:relative;width:min(320px,78vw);}
@@ -209,7 +211,7 @@ function loadState(){
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function task(t,p){ return {id:uid(), text:t, active:true, pts:(typeof p==="number"?p:10)}; }
 function must(t,p){ return {id:uid(), text:t, pts:(typeof p==="number"?p:5)}; }
-function freshToday(){ return {mustDone:[], spunTaskId:null, spunDone:false, starAwarded:false, pointsEarned:0, starsEarned:0}; }
+function freshToday(){ return {mustDone:[], spunTaskId:null, spunDone:false, starAwarded:false, pointsEarned:0, starsEarned:0, wheelDone:[], wheelEarned:{}}; }
 
 function defaultState(){
   return {
@@ -262,6 +264,7 @@ function ensureDailyReset(){
 var state = loadState() || defaultState();
 // migrate safety
 if(!state.scoring) state.scoring = "ticks";
+if(typeof state.spinBoost!=="number") state.spinBoost = 2;
 state.kids.forEach(function(k){
   if(!k.today) k.today=freshToday(); if(!k.recent) k.recent=[];
   if(typeof k.lifetime!=="number") k.lifetime=k.stars||0;
@@ -274,6 +277,8 @@ state.kids.forEach(function(k){
   if(typeof k.pointTarget!=="number") k.pointTarget=50;
   if(typeof k.today.pointsEarned!=="number") k.today.pointsEarned=0;
   if(typeof k.today.starsEarned!=="number") k.today.starsEarned=0;
+  if(!k.today.wheelDone) k.today.wheelDone=[];
+  if(!k.today.wheelEarned) k.today.wheelEarned={};
   k.must.forEach(function(m){ if(typeof m.pts!=="number") m.pts=5; });
   k.wheel.forEach(function(t){ if(typeof t.pts!=="number") t.pts=10; });
 });
@@ -363,7 +368,24 @@ function kidCard(k){
           +   (state.scoring==="points" ? '<span class="pts-chip">+'+m.pts+'</span>' : '')
           + '</div>';
   });
-  html += '</div><h3 class="sec">Spin for today\u2019s mission</h3><div class="wheel-zone" data-zone="1"></div>';
+  html += '</div>';
+  if(state.scoring==="points"){
+    var boost = Math.max(1, state.spinBoost||2);
+    var missions = k.wheel.filter(function(t){return t.active;});
+    html += '<h3 class="sec">Missions — spin for the 🎯 spotlight ('+boost+'× points!)</h3><div class="must-list">';
+    missions.forEach(function(t){
+      var mdone = k.today.wheelDone.indexOf(t.id) !== -1;
+      var spot = k.today.spunTaskId === t.id;
+      var eff = spot ? t.pts*boost : t.pts;
+      html += '<div class="must-item'+(mdone?' done':'')+(spot?' spotlight':'')+'" data-mission="'+t.id+'">'
+            +   '<span class="box">'+(mdone?'✓':'')+'</span><span class="txt">'+(spot?'🎯 ':'')+esc(t.text)+'</span>'
+            +   '<span class="pts-chip'+(spot?' boost':'')+'">+'+eff+(spot?' ⚡':'')+'</span></div>';
+    });
+    html += '</div>';
+    html += '<h3 class="sec">'+(k.today.spunTaskId?'Today\u2019s spotlight':'Spin for the spotlight')+'</h3><div class="wheel-zone" data-zone="1"></div>';
+  } else {
+    html += '<h3 class="sec">Spin for today\u2019s mission</h3><div class="wheel-zone" data-zone="1"></div>';
+  }
   card.innerHTML = html;
 
   // must-do taps
@@ -380,6 +402,29 @@ function kidCard(k){
         if(state.scoring==="points" && m2) addPoints(k, -m2.pts);
       }
       checkComplete(k); saveState(); render();
+    });
+  });
+
+  // mission taps (points mode)
+  card.querySelectorAll("[data-mission]").forEach(function(el){
+    el.addEventListener("click", function(){
+      var id = el.getAttribute("data-mission");
+      var t2 = findTask(k, id);
+      if(!t2) return;
+      var i = k.today.wheelDone.indexOf(id);
+      if(i===-1){
+        var boost2 = Math.max(1, state.spinBoost||2);
+        var eff2 = (k.today.spunTaskId===id) ? t2.pts*boost2 : t2.pts;
+        k.today.wheelDone.push(id);
+        k.today.wheelEarned[id] = eff2;
+        addPoints(k, eff2);
+        confetti(k.today.spunTaskId===id ? "#FFB020" : k.color, k.today.spunTaskId===id ? 60 : 25);
+      } else {
+        k.today.wheelDone.splice(i,1);
+        addPoints(k, -(k.today.wheelEarned[id]||t2.pts));
+        delete k.today.wheelEarned[id];
+      }
+      saveState(); render();
     });
   });
 
@@ -404,20 +449,26 @@ function kidCard(k){
   }else{
     var t = findTask(k, k.today.spunTaskId);
     var name = t ? t.text : "Mystery mission";
-    zone.innerHTML = '<div class="mission"><div class="lbl">Today\u2019s mission'
-      + (state.scoring==="points" && t ? ' · worth '+t.pts+' pts ⚡' : '')+'</div>'
-      + '<div class="task">'+esc(name)+'</div>'
-      + (k.today.spunDone
-          ? '<div class="done-chip">✓ Mission complete!</div>'
-          : '<button class="done-btn">I did it! ✓</button>')
-      + '</div>';
-    var db = zone.querySelector(".done-btn");
-    if(db) db.addEventListener("click", function(){
-      k.today.spunDone = true;
-      if(state.scoring==="points" && t) addPoints(k, t.pts);
-      checkComplete(k); saveState(); render();
-      confetti(k.color, 30);
-    });
+    if(state.scoring==="points"){
+      var b2 = Math.max(1, state.spinBoost||2);
+      zone.innerHTML = '<div class="mission"><div class="lbl">🎯 Spotlight · '+b2+'× points today</div>'
+        + '<div class="task">'+esc(name)+'</div>'
+        + '<div style="font-size:14px;color:var(--muted);font-weight:600">Tap it in the missions list when done!</div>'
+        + '</div>';
+    }else{
+      zone.innerHTML = '<div class="mission"><div class="lbl">Today\u2019s mission</div>'
+        + '<div class="task">'+esc(name)+'</div>'
+        + (k.today.spunDone
+            ? '<div class="done-chip">✓ Mission complete!</div>'
+            : '<button class="done-btn">I did it! ✓</button>')
+        + '</div>';
+      var db = zone.querySelector(".done-btn");
+      if(db) db.addEventListener("click", function(){
+        k.today.spunDone = true;
+        checkComplete(k); saveState(); render();
+        confetti(k.color, 30);
+      });
+    }
   }
 
   // banners
@@ -624,6 +675,8 @@ function renderPanel(){
     + '<div class="row"><label>Scoring</label>'
     + '<button class="'+(state.scoring==="ticks"?'plain sel-mode':'plain')+'" id="modeTicks">✓ Ticks — star per day</button>'
     + '<button class="'+(state.scoring==="points"?'plain sel-mode':'plain')+'" id="modePoints">⚡ Points — points become stars</button></div>'
+    + '<div class="row"><label>🎯 Spin boost</label><input type="number" min="1" max="10" id="spinBoost" value="'+(state.spinBoost||2)+'">'
+    + '<span style="font-size:12px;color:var(--muted);font-weight:600">multiplier for the spotlight task (points mode)</span></div>'
     + '<label class="switch"><input type="checkbox" id="linkRule" '+(state.linkRule?'checked':'')+'> Star needs every-day tasks AND the wheel mission (ticks mode)</label>'
     + '<div class="row"><button class="plain" id="showBackup">Show backup code</button>'
     + '<button class="plain" id="doRestore">Restore from code</button>'
@@ -745,6 +798,10 @@ function renderPanel(){
   });
   document.getElementById("modePoints").addEventListener("click", function(){
     state.scoring = "points"; saveState(); render(); renderPanel();
+  });
+  document.getElementById("spinBoost").addEventListener("change", function(e){
+    state.spinBoost = Math.max(1, Math.min(10, parseInt(e.target.value||"2",10)));
+    saveState(); render();
   });
   document.getElementById("linkRule").addEventListener("change", function(e){
     state.linkRule = e.target.checked; saveState();
